@@ -5,7 +5,6 @@ Two C# classes for cheating Steam's Summer Sailen Game.  No browser / GUI needed
 ### Dependencies
 ```
 Newtonsoft.Json
-SteamKit2 (if you do not replace the EResult type in 'GetTokenResponse')
 ```
 
 ### How To Use
