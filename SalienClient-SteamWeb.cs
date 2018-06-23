@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using SteamKit2;
 
 namespace SteamBot
 {
@@ -25,10 +24,10 @@ namespace SteamBot
             else
             {
                 GetTokenResponse TokenResponse = GetToken();
-                if (TokenResponse.Success == EResult.OK)
+                if (TokenResponse.Success == 1)
                 {
                     Token = TokenResponse.Token;
-                    Console.WriteLine("SlienGame Token: {0}", Token);
+                    Console.WriteLine("SalienGame Token: {0}", Token);
                 }
                 else
                     Console.WriteLine("Error Getting SalienGame Token: {0}", TokenResponse.Success);
@@ -68,7 +67,7 @@ namespace SteamBot
                     Console.WriteLine("Sleeping for 110 seconds...");
                     Thread.Sleep(TimeSpan.FromSeconds(110));
                     ReportScoreResponse Response = ReportScore(Scores[Zone.Item2.Difficulty - 1]);
-                    Console.WriteLine("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2, Next Level Score: {3}",
+                    Console.WriteLine("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2}, Next Level Score: {3}",
                         Scores[Zone.Item2.Difficulty - 1], Response.New_Level, Response.New_Score, Response.Next_Level_Score);
                 }
             }
@@ -187,7 +186,7 @@ namespace SteamBot
             // If you are not using SteamKit2, you can implement your own
             // EResult enum or just change this to an integer datatype
             [JsonProperty("success")]
-            public EResult Success { get; set; }
+            public int Success { get; set; }
 
             [JsonProperty("token")]
             public string Token { get; set; }
