@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Specialized;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,7 +7,6 @@ using System.Threading;
 using System.Web;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using SteamKit2;
 
 namespace SteamBot
 {
@@ -70,7 +69,7 @@ namespace SteamBot
                     Console.WriteLine("Sleeping for 110 seconds...");
                     Thread.Sleep(TimeSpan.FromSeconds(110));
                     ReportScoreResponse Response = ReportScore(Scores[Zone.Item2.Difficulty - 1]);
-                    Console.WriteLine("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2, Next Level Score: {3}",
+                    Console.WriteLine("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2}, Next Level Score: {3}",
                         Scores[Zone.Item2.Difficulty - 1], Response.New_Level, Response.New_Score, Response.Next_Level_Score);
                 }
             }
@@ -205,24 +204,6 @@ namespace SteamBot
         }
 
 
-        private class ReportScoreResponse
-        {
-            [JsonProperty("old_score")]
-            public int Old_Score { get; set; }
-
-            [JsonProperty("old_level")]
-            public short Old_Level { get; set; }
-
-            [JsonProperty("new_score")]
-            public int New_Score { get; set; }
-
-            [JsonProperty("new_level")]
-            public short New_Level { get; set; }
-
-            [JsonProperty("next_level_score")]
-            public int Next_Level_Score { get; set; }
-        }
-
         private class GetTokenResponse
         {
             [JsonProperty("persona_name")]
@@ -234,7 +215,7 @@ namespace SteamBot
             // If you are not using SteamKit2, you can implement your own
             // EResult enum or just change this to an integer datatype
             [JsonProperty("success")]
-            public EResult Success { get; set; }
+            public int Success { get; set; }
 
             [JsonProperty("token")]
             public string Token { get; set; }
@@ -397,6 +378,24 @@ namespace SteamBot
 
             [JsonProperty("top_clans")]
             public Planet_Clan_Info[] Top_Clans { get; set; }
+        }
+
+        private class ReportScoreResponse
+        {
+            [JsonProperty("old_score")]
+            public int Old_Score { get; set; }
+
+            [JsonProperty("old_level")]
+            public short Old_Level { get; set; }
+
+            [JsonProperty("new_score")]
+            public int New_Score { get; set; }
+
+            [JsonProperty("new_level")]
+            public short New_Level { get; set; }
+
+            [JsonProperty("next_level_score")]
+            public int Next_Level_Score { get; set; }
         }
     }
 }
