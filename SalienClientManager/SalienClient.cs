@@ -16,7 +16,7 @@ namespace SalienClientManager
         private readonly string Username;
         private readonly string Token;
         private readonly short[] Scores = { 600, 1200, 2400 };
-        private readonly TimeSpan SleepTime = TimeSpan.FromSeconds(20);
+        private readonly double SleepSeconds = 20d;
 
         public SalienClient(string username, string token)
         {
@@ -45,8 +45,8 @@ namespace SalienClientManager
                 GetUserInfoResponse UserInfo = GetUserInfo();
                 if (UserInfo == null)
                 {
-                    Output("Failed Getting UserInfo, retrying in 20 seconds...", ConsoleColor.Red);
-                    Thread.Sleep(SleepTime);
+                    Output(String.Format("Failed Getting UserInfo, retrying in {0} seconds...", SleepSeconds), ConsoleColor.Red);
+                    Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                     continue;
                 }
 
@@ -59,8 +59,8 @@ namespace SalienClientManager
                         Output("Left Active Zone!", ConsoleColor.Green);
                     else
                     {
-                        Output(String.Format("Error Leaving Active Zone: {0}, retrying in 20 seconds...", LeaveGameResult.ToString()), ConsoleColor.Red);
-                        Thread.Sleep(SleepTime);
+                        Output(String.Format("Error Leaving Active Zone: {0}, retrying in {1} seconds...", LeaveGameResult.ToString(), SleepSeconds), ConsoleColor.Red);
+                        Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                         continue;
                     }
                 }
@@ -74,32 +74,32 @@ namespace SalienClientManager
                         Output("Left Active Planet!", ConsoleColor.Green);
                     else
                     {
-                        Output(String.Format("Error Leaving Active Planet: {0}, retrying in 20 seconds...", LeavePlanetResult.ToString()), ConsoleColor.Red);
-                        Thread.Sleep(SleepTime);
+                        Output(String.Format("Error Leaving Active Planet: {0}, retrying in {1} seconds...", LeavePlanetResult.ToString(), SleepSeconds), ConsoleColor.Red);
+                        Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                         continue;
                     }
                 }
 
                 // Search for a new game
                 Output("Finding Planet and Zone to Join...");
-                Tuple<Planet, Planet_Zone> Zone = FindZone();
-                if (Zone == null)
+                (Planet planet, Planet_Zone zone) = FindZone();
+                if (zone == null)
                 {
-                    Output("Failed to Find a Zone, retrying in 20 seconds...", ConsoleColor.Red);
-                    Thread.Sleep(SleepTime);
+                    Output(String.Format("Failed to Find a Zone, retrying in {0} seconds...", SleepSeconds), ConsoleColor.Red);
+                    Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                     continue;
                 }
-                Output(String.Format("Found Zone: {0} with Difficulty: {1} on Planet: {2} ({3})!", Zone.Item2.Zone_Position, Zone.Item2.Difficulty, Zone.Item1.ID, Zone.Item1.State.Name), ConsoleColor.Green);
+                Output(String.Format("Found Zone: {0} with Difficulty: {1} on Planet: {2} ({3})!", zone.Zone_Position, zone.Difficulty, planet.ID, planet.State.Name), ConsoleColor.Green);
 
                 // Join Planet
                 Output("Joining Planet...");
-                EResult JoinPlanetResult = JoinPlanet(Zone.Item1.ID);
+                EResult JoinPlanetResult = JoinPlanet(planet.ID);
                 if (JoinPlanetResult == EResult.OK)
                     Output("Joined Planet!", ConsoleColor.Green);
                 else
                 {
-                    Output(String.Format("Error Joining Planet: {0}, retrying in 20 seconds...", JoinPlanetResult.ToString()), ConsoleColor.Red);
-                    Thread.Sleep(SleepTime);
+                    Output(String.Format("Error Joining Planet: {0}, retrying in {1} seconds...", JoinPlanetResult.ToString(), SleepSeconds), ConsoleColor.Red);
+                    Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                     continue;
                 }
 
@@ -108,7 +108,7 @@ namespace SalienClientManager
                 {
                     // Join Zone
                     Output("Joining Zone...");
-                    EResult JoinZoneResult = JoinZone(Zone.Item2.Zone_Position);
+                    EResult JoinZoneResult = JoinZone(zone.Zone_Position);
                     if (JoinZoneResult == EResult.OK)
                         Output("Joined Zone!", ConsoleColor.Green);
                     else if (JoinZoneResult == EResult.Expired)
@@ -118,8 +118,8 @@ namespace SalienClientManager
                     }
                     else
                     {
-                        Output(String.Format("Error Joining Zone: {0}, retrying in 20 seconds...", JoinZoneResult.ToString()), ConsoleColor.Red);
-                        Thread.Sleep(SleepTime);
+                        Output(String.Format("Error Joining Zone: {0}, retrying in {1} seconds...", JoinZoneResult.ToString(), SleepSeconds), ConsoleColor.Red);
+                        Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                         break;
                     }
 
@@ -128,23 +128,21 @@ namespace SalienClientManager
                     Thread.Sleep(TimeSpan.FromSeconds(110));
 
                     // Report Score
-                    Tuple<EResult, ReportScoreResponse> Report = ReportScore(Scores[Zone.Item2.Difficulty - 1]);
-                    EResult ReportResult = Report.Item1;
-                    ReportScoreResponse ReportResponse = Report.Item2;
-                    if (ReportResult == EResult.OK)
+                    (EResult Result, ReportScoreResponse Response) = ReportScore(Scores[zone.Difficulty - 1]);
+                    if (Result == EResult.OK)
                     {
                         Output(String.Format("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2}, Next Level Score: {3}",
-                            Scores[Zone.Item2.Difficulty - 1], ReportResponse.New_Level, ReportResponse.New_Score, ReportResponse.Next_Level_Score), ConsoleColor.Magenta);
+                            Scores[zone.Difficulty - 1], Response.New_Level, Response.New_Score, Response.Next_Level_Score), ConsoleColor.Magenta);
                     }
-                    else if (ReportResult == EResult.NoMatch)
+                    else if (Result == EResult.NoMatch)
                     {
                         Output("The Zone we just finished was captured before we could report our score...", ConsoleColor.Yellow);
                         break;
                     }
                     else
                     {
-                        Output(String.Format("Error Reporting Score: {0}, retrying in 20 seconds...", ReportResult.ToString()), ConsoleColor.Red);
-                        Thread.Sleep(SleepTime);
+                        Output(String.Format("Error Reporting Score: {0}, retrying in {1} seconds...", Response.ToString(), SleepSeconds), ConsoleColor.Red);
+                        Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                         break;
                     }
                 }
@@ -157,14 +155,14 @@ namespace SalienClientManager
             Console.WriteLine(String.Format("[{0}/SalienClient] {1}", Username, output));
         }
 
-        private Tuple<Dictionary<string, string>, string> Request(string URI, string Method, Dictionary<string, string> Data = null)
+        private (Dictionary<string, string> Headers, string Data) Request(string URI, string Method, Dictionary<string, string> Data = null)
         {
             try
             {
                 if (Method == "POST")
                 {
                     var Response = Client.PostAsync(URI, new FormUrlEncodedContent(Data));
-                    return new Tuple<Dictionary<string, string>, string>(Response.Result.Headers.ToDictionary(x => x.Key, x => x.Value.FirstOrDefault()), Response.Result.Content.ReadAsStringAsync().Result);
+                    return (Response.Result.Headers.ToDictionary(x => x.Key, x => x.Value.FirstOrDefault()), Response.Result.Content.ReadAsStringAsync().Result);
                 }
                 else
                 {
@@ -177,13 +175,13 @@ namespace SalienClientManager
                         URI = URI + "?" + Collection.ToString();
                     }
                     var Response = Client.GetAsync(URI);
-                    return new Tuple<Dictionary<string, string>, string>(Response.Result.Headers.ToDictionary(x => x.Key, x => x.Value.FirstOrDefault()), Response.Result.Content.ReadAsStringAsync().Result);
+                    return (Response.Result.Headers.ToDictionary(x => x.Key, x => x.Value.FirstOrDefault()), Response.Result.Content.ReadAsStringAsync().Result);
                 }
             }
             catch (Exception ex)
             {
                 Output(String.Format("HttpClient Request Error: {0}", ex.Message), ConsoleColor.Red);
-                return null;
+                return (null, null);
             }
         }
 
@@ -191,10 +189,10 @@ namespace SalienClientManager
         {
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
-            var Response = Request("/ITerritoryControlMinigameService/GetPlayerInfo/v0001/", "POST", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/GetPlayerInfo/v0001/", "POST", Data);
             if (Response == null)
                 return null;
-            return JObject.Parse(Response.Item2).SelectToken("response", false).ToObject<GetUserInfoResponse>();
+            return JObject.Parse(Response).SelectToken("response", false).ToObject<GetUserInfoResponse>();
         }
 
         private GetPlanetsResponse GetPlanets(bool Active_Only = true)
@@ -202,52 +200,52 @@ namespace SalienClientManager
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("active_only", Convert.ToByte(Active_Only).ToString());
             Data.Add("language", "english");
-            var Response = Request("/ITerritoryControlMinigameService/GetPlanets/v0001/", "GET", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/GetPlanets/v0001/", "GET", Data);
             if (Response == null)
                 return null;
-            return JObject.Parse(Response.Item2).SelectToken("response", false).ToObject<GetPlanetsResponse>();
+            return JObject.Parse(Response).SelectToken("response", false).ToObject<GetPlanetsResponse>();
         }
 
         private GetPlanetsResponse GetPlanet(short PlanetID)
         {
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("id", PlanetID.ToString());
-            var Response = Request("/ITerritoryControlMinigameService/GetPlanet/v0001/", "GET", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/GetPlanet/v0001/", "GET", Data);
             if (Response == null)
                 return null;
-            return JObject.Parse(Response.Item2).SelectToken("response", false).ToObject<GetPlanetsResponse>();
+            return JObject.Parse(Response).SelectToken("response", false).ToObject<GetPlanetsResponse>();
         }
 
-        private Tuple<Planet, Planet_Zone> FindZone()
+        private (Planet planet, Planet_Zone zone) FindZone()
         {
             Planet[] Planets = GetPlanets().Planets;
             if (Planets == null)
-                return null;
+                return (null, null);
 
             for (int i = 0; i < Planets.Count(); i++)
                 Planets[i].Zones = GetPlanet(Planets[i].ID).Planets[0].Zones.Where(x => !x.Captured).OrderByDescending(y => y.Difficulty).ToArray();
 
             int Highest = 0;
-            Tuple<Planet, Planet_Zone> tuple = new Tuple<Planet, Planet_Zone>(Planets[0], Planets[0].Zones[0]);
-            foreach (Planet planet in Planets)
+            Planet planet = null;
+            Planet_Zone planet_zone = null;
+            foreach (Planet p in Planets)
             {
-                if (planet.Zones[0].Difficulty > Highest)
+                if (p.Zones[0].Difficulty > Highest)
                 {
-                    tuple = new Tuple<Planet, Planet_Zone>(planet, planet.Zones[0]);
-                    Highest = planet.Zones[0].Difficulty;
+                    planet = p;
+                    planet_zone = p.Zones[0];
+                    Highest = planet_zone.Difficulty;
                 }
             }
-            return tuple;
+            return (planet, planet_zone);
         }
 
-        private Tuple<Planet, Planet_Zone> GetZone(Tuple<Planet, Planet_Zone> Zone)
+        private (Planet planet, Planet_Zone zone) GetZone(short PlanetID, short Zone_Position)
         {
-            short PlanetID = Zone.Item1.ID;
-            short ZoneID = Zone.Item2.Zone_Position;
             Planet planet = GetPlanet(PlanetID).Planets[0];
             if (planet == null)
-                return null;
-            return new Tuple<Planet, Planet_Zone>(planet, planet.Zones.First(x => x.Zone_Position == ZoneID));
+                return (null, null);
+            return (planet, planet.Zones.First(x => x.Zone_Position == Zone_Position));
         }
 
         private EResult JoinPlanet(short Planet)
@@ -255,10 +253,10 @@ namespace SalienClientManager
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
             Data.Add("id", Planet.ToString());
-            var Response = Request("/ITerritoryControlMinigameService/JoinPlanet/v0001/", "POST", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/JoinPlanet/v0001/", "POST", Data);
             if (Response == null)
                 return EResult.BadResponse;
-            return (EResult)Convert.ToInt16(Response.Item1["X-eresult"]);
+            return (EResult)Convert.ToInt16(Headers["X-eresult"]);
         }
 
         private EResult LeaveGame(short GameID)
@@ -266,10 +264,10 @@ namespace SalienClientManager
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
             Data.Add("gameid", GameID.ToString());
-            var Response = Request("/IMiniGameService/LeaveGame/v0001/", "POST", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/IMiniGameService/LeaveGame/v0001/", "POST", Data);
             if (Response == null)
                 return EResult.BadResponse;
-            return (EResult)Convert.ToInt16(Response.Item1["X-eresult"]);
+            return (EResult)Convert.ToInt16(Headers["X-eresult"]);
         }
 
         private EResult JoinZone(short Zone)
@@ -277,26 +275,26 @@ namespace SalienClientManager
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
             Data.Add("zone_position", Zone.ToString());
-            var Response = Request("/ITerritoryControlMinigameService/JoinZone/v0001/", "POST", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/JoinZone/v0001/", "POST", Data);
             // The normal response from this can be parsed from json into a 'Planet_Zone',
             // since we don't do anything with the object, and if the request fails the json will be null,
             // it's best just to return an EResult
             if (Response == null)
                 return EResult.BadResponse;
-            return (EResult)Convert.ToInt16(Response.Item1["X-eresult"]);
-            //return JObject.Parse(Response.Item2).SelectToken("response", false).SelectToken("zone_info", false).ToObject<Planet_Zone>();
+            return (EResult)Convert.ToInt16(Headers["X-eresult"]);
+            //return JObject.Parse(Response).SelectToken("response", false).SelectToken("zone_info", false).ToObject<Planet_Zone>();
         }
 
-        private Tuple<EResult, ReportScoreResponse> ReportScore(short Score)
+        private (EResult Result, ReportScoreResponse Response) ReportScore(short Score)
         {
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
             Data.Add("score", Score.ToString());
             Data.Add("language", "english");
-            var Response = Request("/ITerritoryControlMinigameService/ReportScore/v0001/", "POST", Data);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/ReportScore/v0001/", "POST", Data);
             if (Response == null)
-                return new Tuple<EResult, ReportScoreResponse>(EResult.BadResponse, null);
-            return new Tuple<EResult, ReportScoreResponse>((EResult)Convert.ToInt16(Response.Item1["X-eresult"]), JObject.Parse(Response.Item2).SelectToken("response", false).ToObject<ReportScoreResponse>());
+                return (EResult.BadResponse, null);
+            return ((EResult)Convert.ToInt16(Headers["X-eresult"]), JObject.Parse(Response).SelectToken("response", false).ToObject<ReportScoreResponse>());
         }
 
 
