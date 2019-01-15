@@ -15,14 +15,14 @@ namespace SalienClientManager
         private HttpClient Client;
         private readonly string Username;
         private readonly string Token;
-        private readonly short[] Scores = { 600, 1200, 2400 };
+        private readonly uint AccountID;
         private readonly double SleepSeconds = 20d;
 
-        public SalienClient(string username, string token)
+        public SalienClient(string username, string token, uint accountid)
         {
             Client = new HttpClient();
 
-            Client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, */*");
+            Client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
             Client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "en-AU,en-US,en-GB,en");
             Client.DefaultRequestHeaders.TryAddWithoutValidation("Origin", "https://steamcommunity.com");
             Client.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://steamcommunity.com/saliengame/play/");
@@ -34,6 +34,7 @@ namespace SalienClientManager
 
             Username = username;
             Token = token;
+            AccountID = accountid;
         }
 
         public void Start()
@@ -56,7 +57,9 @@ namespace SalienClientManager
                     Output("Leaving Active Zone...");
                     EResult LeaveGameResult = LeaveGame(UserInfo.Active_Zone_Game);
                     if (LeaveGameResult == EResult.OK)
+                    {
                         Output("Left Active Zone!", ConsoleColor.Green);
+                    }
                     else
                     {
                         Output(String.Format("Error Leaving Active Zone: {0}, retrying in {1} seconds...", LeaveGameResult.ToString(), SleepSeconds), ConsoleColor.Red);
@@ -71,7 +74,9 @@ namespace SalienClientManager
                     Output("Leaving Active Planet...");
                     EResult LeavePlanetResult = LeaveGame(UserInfo.Active_Planet);
                     if (LeavePlanetResult == EResult.OK)
+                    {
                         Output("Left Active Planet!", ConsoleColor.Green);
+                    }
                     else
                     {
                         Output(String.Format("Error Leaving Active Planet: {0}, retrying in {1} seconds...", LeavePlanetResult.ToString(), SleepSeconds), ConsoleColor.Red);
@@ -89,13 +94,19 @@ namespace SalienClientManager
                     Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
                     continue;
                 }
-                Output(String.Format("Found Zone: {0} with Difficulty: {1} on Planet: {2} ({3})!", zone.Zone_Position, zone.Difficulty, planet.ID, planet.State.Name), ConsoleColor.Green);
+
+                if (zone.Type == 4)
+                    Output(String.Format("Found Boss Zone: {0} on Planet: {1} ({2})!", zone.Zone_Position, planet.ID, planet.State.Name), ConsoleColor.Blue);
+                else
+                    Output(String.Format("Found Zone: {0} with Difficulty: {1} on Planet: {2} ({3})!", zone.Zone_Position, zone.Difficulty, planet.ID, planet.State.Name), ConsoleColor.Green);
 
                 // Join Planet
                 Output("Joining Planet...");
                 EResult JoinPlanetResult = JoinPlanet(planet.ID);
                 if (JoinPlanetResult == EResult.OK)
+                {
                     Output("Joined Planet!", ConsoleColor.Green);
+                }
                 else
                 {
                     Output(String.Format("Error Joining Planet: {0}, retrying in {1} seconds...", JoinPlanetResult.ToString(), SleepSeconds), ConsoleColor.Red);
@@ -103,47 +114,161 @@ namespace SalienClientManager
                     continue;
                 }
 
-
                 while (true)
                 {
                     // Join Zone
                     Output("Joining Zone...");
-                    EResult JoinZoneResult = JoinZone(zone.Zone_Position);
-                    if (JoinZoneResult == EResult.OK)
-                        Output("Joined Zone!", ConsoleColor.Green);
-                    else if (JoinZoneResult == EResult.Expired)
+
+                    // Boss Zone
+                    if (zone.Type == 4)
                     {
-                        Output("The Zone we tried joining has been captured...", ConsoleColor.Yellow);
+                        (EResult Result, bool WaitingForPlayers) JoinBossZoneResult = JoinBossZone(zone.Zone_Position);
+                        if (JoinBossZoneResult.Result == EResult.OK)
+                        {
+                            Output("Joined Boss Zone!", ConsoleColor.Blue);
+                        }
+                        else
+                        {
+                            Output(String.Format("Error Joining Boss Zone: {0}, retrying in {1} seconds...", JoinBossZoneResult.Result.ToString(), SleepSeconds), ConsoleColor.Red);
+                            Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
+                            break;
+                        }
+
+                        // Report Score
+                        int Heal = 0;
+                        int Fails = 0;
+                        int PreviousXPGained = 0;
+                        bool WaitingForPlayers = JoinBossZoneResult.WaitingForPlayers;
+                        while (true)
+                        {
+                            (EResult Result, ReportBossDamageResponse Response) = ReportBossDamage(WaitingForPlayers, (Heal == 23));
+                            if (Result == EResult.OK)
+                            {
+                                if (Response.Boss_Status == null)
+                                {
+                                    Output(String.Format("Waiting... Sleeping for {0} seconds...", SleepSeconds), ConsoleColor.Blue);
+                                    Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
+                                    continue;
+                                }
+                                else
+                                {
+                                    WaitingForPlayers = Response.Waiting_For_Players;
+                                }
+
+                                if (WaitingForPlayers)
+                                {
+                                    Output(String.Format("Waiting for players... Sleeping for {0}", SleepSeconds), ConsoleColor.Blue);
+                                    Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
+                                    continue;
+                                }
+
+                                string output = String.Format("Boss HP: {0} / {1}\t Lasers: {2}, Heals: {3}\t",
+                                    Response.Boss_Status.Boss_HP, Response.Boss_Status.Boss_Max_HP,
+                                    Response.Num_Laser_Uses, Response.Num_Team_Heals);
+
+                                if (Response.Game_Over)
+                                    output = "GAME OVER";
+
+                                if (AccountID != 0)
+                                {
+                                    Boss_Player Player = Response.Boss_Status.Boss_Players.First(x => x.AccountID == AccountID);
+                                    if (!Response.Game_Over)
+                                    {
+                                        output += String.Format("HP: {0} / {1}, Level: {2}, Score: {3} / {4}, XP Earned: {5}",
+                                            Player.HP, Player.Max_HP, Player.New_Level, Player.Score_On_Join + Player.XP_Earned, Player.Next_Level_Score, Player.XP_Earned);
+
+                                        PreviousXPGained = Player.XP_Earned;
+                                    }
+                                    else
+                                    {
+                                        output += String.Format(", XP Gained: {0}, Bonus XP: {1}, Total XP: {2}",
+                                            PreviousXPGained, Player.XP_Earned - PreviousXPGained, Player.XP_Earned);
+                                    }
+                                }
+                                Output(output, ConsoleColor.Blue);
+
+                                if (Response.Game_Over)
+                                    break;
+                            }
+                            else if (Result == EResult.InvalidState)
+                            {
+                                break;
+                            }
+                            else
+                            {
+                                Output(String.Format("Error Reporting Boss Damage: {0}, retrying in {1} seconds...", Result.ToString(), SleepSeconds), ConsoleColor.Red);
+                                Fails++;
+                                Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
+                            }
+
+                            if (Fails > 5)
+                                break;
+
+                            Heal++;
+
+                            if (Heal > 23)
+                                Heal = 0;
+
+                            Thread.Sleep(TimeSpan.FromSeconds(5));
+                        }
                         break;
                     }
+                    // Normal Zone
                     else
                     {
-                        Output(String.Format("Error Joining Zone: {0}, retrying in {1} seconds...", JoinZoneResult.ToString(), SleepSeconds), ConsoleColor.Red);
-                        Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
-                        break;
-                    }
+                        EResult JoinZoneResult = JoinZone(zone.Zone_Position);
+                        if (JoinZoneResult == EResult.OK)
+                        {
+                            Output("Joined Zone!", ConsoleColor.Green);
+                        }
+                        else if (JoinZoneResult == EResult.Expired)
+                        {
+                            Output("The Zone we tried joining has been captured...", ConsoleColor.Yellow);
+                            break;
+                        }
+                        else
+                        {
+                            Output(String.Format("Error Joining Zone: {0}, retrying in {1} seconds...", JoinZoneResult.ToString(), SleepSeconds), ConsoleColor.Red);
+                            Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
+                            break;
+                        }
 
-                    // Wait
-                    Output("Sleeping for 110 seconds...");
-                    Thread.Sleep(TimeSpan.FromSeconds(110));
 
-                    // Report Score
-                    (EResult Result, ReportScoreResponse Response) = ReportScore(Scores[zone.Difficulty - 1]);
-                    if (Result == EResult.OK)
-                    {
-                        Output(String.Format("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2}, Next Level Score: {3}",
-                            Scores[zone.Difficulty - 1], Response.New_Level, Response.New_Score, Response.Next_Level_Score), ConsoleColor.Magenta);
-                    }
-                    else if (Result == EResult.NoMatch)
-                    {
-                        Output("The Zone we just finished was captured before we could report our score...", ConsoleColor.Yellow);
-                        break;
-                    }
-                    else
-                    {
-                        Output(String.Format("Error Reporting Score: {0}, retrying in {1} seconds...", Response.ToString(), SleepSeconds), ConsoleColor.Red);
-                        Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
-                        break;
+                        // Wait (and check if a better zone was found)
+                        Output("Sleeping for 110 seconds...");
+                        for (int i = 1; i < 110; i++)
+                        {
+                            Thread.Sleep(TimeSpan.FromSeconds(1));
+                            if (Program.NewZone != null)
+                            {
+                                if (zone.Difficulty < Program.NewZone.Difficulty || Program.NewZone.Type == 4)
+                                    break;
+                            }
+                        }
+                        if (Program.NewZone != null)
+                        {
+                            if (zone.Difficulty < Program.NewZone.Difficulty || Program.NewZone.Type == 4)
+                                break;
+                        }
+
+                        // Report Score
+                        (EResult Result, ReportScoreResponse Response) = ReportScore(300 << zone.Difficulty);
+                        if (Result == EResult.OK)
+                        {
+                            Output(String.Format("Finished Zone for {0} XP... Current Level: {1}, Current Score: {2}, Next Level Score: {3}",
+                                300 << zone.Difficulty, Response.New_Level, Response.New_Score, Response.Next_Level_Score), ConsoleColor.Magenta);
+                        }
+                        else if (Result == EResult.NoMatch)
+                        {
+                            Output("The Zone we just finished was captured before we could report our score...", ConsoleColor.Yellow);
+                            break;
+                        }
+                        else
+                        {
+                            Output(String.Format("Error Reporting Score: {0}, retrying in {1} seconds...", Response.ToString(), SleepSeconds), ConsoleColor.Red);
+                            Thread.Sleep(TimeSpan.FromSeconds(SleepSeconds));
+                            break;
+                        }
                     }
                 }
             }
@@ -216,30 +341,6 @@ namespace SalienClientManager
             return JObject.Parse(Response).SelectToken("response", false).ToObject<GetPlanetsResponse>();
         }
 
-        private (Planet planet, Planet_Zone zone) FindZone()
-        {
-            Planet[] Planets = GetPlanets().Planets;
-            if (Planets == null)
-                return (null, null);
-
-            for (int i = 0; i < Planets.Count(); i++)
-                Planets[i].Zones = GetPlanet(Planets[i].ID).Planets[0].Zones.Where(x => !x.Captured).OrderByDescending(y => y.Difficulty).ToArray();
-
-            int Highest = 0;
-            Planet planet = null;
-            Planet_Zone planet_zone = null;
-            foreach (Planet p in Planets)
-            {
-                if (p.Zones[0].Difficulty > Highest)
-                {
-                    planet = p;
-                    planet_zone = p.Zones[0];
-                    Highest = planet_zone.Difficulty;
-                }
-            }
-            return (planet, planet_zone);
-        }
-
         private (Planet planet, Planet_Zone zone) GetZone(short PlanetID, short Zone_Position)
         {
             Planet planet = GetPlanet(PlanetID).Planets[0];
@@ -248,23 +349,47 @@ namespace SalienClientManager
             return (planet, planet.Zones.First(x => x.Zone_Position == Zone_Position));
         }
 
+        public (Planet planet, Planet_Zone zone) FindZone()
+        {
+            Planet[] Planets = GetPlanets().Planets;
+            if (Planets == null)
+                return (null, null);
+
+            for (int i = 0; i < Planets.Count(); i++)
+                Planets[i].Zones = GetPlanet(Planets[i].ID).Planets[0].Zones.Where(x => !x.Captured && x.Capture_Progress != 0).OrderByDescending(y => y.Difficulty).ToArray();
+
+            if (Planets.Count(x => x.State.Boss_Zone_Position != 0 && x.Zones.Count(y => y.Boss_Active) > 0) > 0)
+            {
+                Planet p = Planets.First(x => x.State.Boss_Zone_Position != 0 && x.Zones.Count(y => y.Boss_Active) > 0);
+                return (p, p.Zones.First(x => x.Boss_Active));
+            }
+            if (Planets.Count(x => x.Zones[0].Difficulty == 3) > 0)
+            {
+                Planet p = Planets.First(x => x.Zones[0].Difficulty == 3);
+                return (p, p.Zones[0]);
+            }
+            else if (Planets.Count(x => x.Zones[0].Difficulty == 2) > 0)
+            {
+                Planet p = Planets.First(x => x.Zones[0].Difficulty == 2);
+                return (p, p.Zones[0]);
+            }
+            else if (Planets.Count(x => x.Zones[0].Difficulty == 1) > 0)
+            {
+                Planet p = Planets.First(x => x.Zones[0].Difficulty == 1);
+                return (p, p.Zones[0]);
+            }
+            else
+            {
+                return (null, null);
+            }
+        }
+
         private EResult JoinPlanet(short Planet)
         {
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
             Data.Add("id", Planet.ToString());
             (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/JoinPlanet/v0001/", "POST", Data);
-            if (Response == null)
-                return EResult.BadResponse;
-            return (EResult)Convert.ToInt16(Headers["X-eresult"]);
-        }
-
-        private EResult LeaveGame(short GameID)
-        {
-            Dictionary<string, string> Data = new Dictionary<string, string>();
-            Data.Add("access_token", Token);
-            Data.Add("gameid", GameID.ToString());
-            (Dictionary<string, string> Headers, string Response) = Request("/IMiniGameService/LeaveGame/v0001/", "POST", Data);
             if (Response == null)
                 return EResult.BadResponse;
             return (EResult)Convert.ToInt16(Headers["X-eresult"]);
@@ -285,7 +410,30 @@ namespace SalienClientManager
             //return JObject.Parse(Response).SelectToken("response", false).SelectToken("zone_info", false).ToObject<Planet_Zone>();
         }
 
-        private (EResult Result, ReportScoreResponse Response) ReportScore(short Score)
+        private (EResult Result, bool WaitingForPlayers) JoinBossZone(short Zone)
+        {
+            Dictionary<string, string> Data = new Dictionary<string, string>();
+            Data.Add("zone_position", Zone.ToString());
+            Data.Add("access_token", Token);
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/JoinBossZone/v0001/", "POST", Data);
+            if (Response == null)
+                return (EResult.BadResponse, true);
+            return ((EResult)Convert.ToInt16(Headers["X-eresult"]),
+                Convert.ToBoolean(JObject.Parse(Response).SelectToken("response", false).SelectToken("waiting_for_players").ToString()));
+        }
+
+        private EResult LeaveGame(int GameID)
+        {
+            Dictionary<string, string> Data = new Dictionary<string, string>();
+            Data.Add("access_token", Token);
+            Data.Add("gameid", GameID.ToString());
+            (Dictionary<string, string> Headers, string Response) = Request("/IMiniGameService/LeaveGame/v0001/", "POST", Data);
+            if (Response == null)
+                return EResult.BadResponse;
+            return (EResult)Convert.ToInt16(Headers["X-eresult"]);
+        }
+
+        private (EResult Result, ReportScoreResponse Response) ReportScore(int Score)
         {
             Dictionary<string, string> Data = new Dictionary<string, string>();
             Data.Add("access_token", Token);
@@ -295,6 +443,20 @@ namespace SalienClientManager
             if (Response == null)
                 return (EResult.BadResponse, null);
             return ((EResult)Convert.ToInt16(Headers["X-eresult"]), JObject.Parse(Response).SelectToken("response", false).ToObject<ReportScoreResponse>());
+        }
+
+        private (EResult Result, ReportBossDamageResponse Response) ReportBossDamage(bool WaitingForPlayers, bool Heal = false)
+        {
+            Dictionary<string, string> Data = new Dictionary<string, string>();
+            Data.Add("access_token", Token);
+            Data.Add("use_heal_ability", Convert.ToByte(Heal).ToString());
+            // Max Damage = 150
+            Data.Add("damage_to_boss", Convert.ToByte(!WaitingForPlayers).ToString());
+            Data.Add("damage_taken", "0");
+            (Dictionary<string, string> Headers, string Response) = Request("/ITerritoryControlMinigameService/ReportBossDamage/v0001/", "POST", Data);
+            if (Response == null)
+                return (EResult.BadResponse, null);
+            return ((EResult)Convert.ToInt16(Headers["X-eresult"]), JObject.Parse(Response).SelectToken("response", false).ToObject<ReportBossDamageResponse>());
         }
 
 
@@ -328,7 +490,7 @@ namespace SalienClientManager
             public int Time_On_Planet { get; set; }
 
             [JsonProperty("active_zone_game")]
-            public short Active_Zone_Game { get; set; }
+            public int Active_Zone_Game { get; set; }
 
             [JsonProperty("active_zone_position")]
             public short Active_Zone_Position { get; set; }
@@ -355,7 +517,7 @@ namespace SalienClientManager
             public Planet[] Planets { get; set; }
         }
 
-        private class Planet
+        public class Planet
         {
             [JsonProperty("id")]
             public short ID { get; set; }
@@ -373,7 +535,7 @@ namespace SalienClientManager
             public Planet_Zone[] Zones { get; set; }
         }
 
-        private class Planet_State
+        public class Planet_State
         {
             [JsonProperty("name")]
             public string Name { get; set; }
@@ -422,9 +584,12 @@ namespace SalienClientManager
 
             [JsonProperty("tag_ids")]
             public string TagIDs { get; set; }
+
+            [JsonProperty("boss_zone_position")]
+            public short Boss_Zone_Position { get; set; }
         }
 
-        private class Planet_Clan
+        public class Planet_Clan
         {
             [JsonProperty("clan_info")]
             public Planet_Clan_Info Clan_Info { get; set; }
@@ -433,10 +598,10 @@ namespace SalienClientManager
             public short Num_Zones_Controlled { get; set; }
         }
 
-        private class Planet_Clan_Info
+        public class Planet_Clan_Info
         {
             [JsonProperty("accountid")]
-            public ulong AccountID { get; set; }
+            public uint AccountID { get; set; }
 
             [JsonProperty("name")]
             public string Name { get; set; }
@@ -448,7 +613,7 @@ namespace SalienClientManager
             public string URL { get; set; }
         }
 
-        private class Planet_Zone
+        public class Planet_Zone
         {
             [JsonProperty("zone_position")]
             public short Zone_Position { get; set; }
@@ -460,7 +625,7 @@ namespace SalienClientManager
             public short Type { get; set; }
 
             [JsonProperty("gameid")]
-            public short GameID { get; set; }
+            public int GameID { get; set; }
 
             [JsonProperty("difficulty")]
             public short Difficulty { get; set; }
@@ -469,10 +634,13 @@ namespace SalienClientManager
             public bool Captured { get; set; }
 
             [JsonProperty("capture_progress")]
-            public double Caputure_Progress { get; set; }
+            public double Capture_Progress { get; set; }
 
             [JsonProperty("top_clans")]
             public Planet_Clan_Info[] Top_Clans { get; set; }
+
+            [JsonProperty("boss_active")]
+            public bool Boss_Active { get; set; }
         }
 
         private class ReportScoreResponse
@@ -491,6 +659,108 @@ namespace SalienClientManager
 
             [JsonProperty("next_level_score")]
             public int Next_Level_Score { get; set; }
+        }
+
+        private class ReportBossDamageResponse
+        {
+            [JsonProperty("boss_status")]
+            public Boss_Status Boss_Status { get; set; }
+
+            [JsonProperty("waiting_for_players")]
+            public bool Waiting_For_Players { get; set; }
+
+            [JsonProperty("game_over")]
+            public bool Game_Over { get; set; }
+
+            [JsonProperty("num_laser_uses")]
+            public short Num_Laser_Uses { get; set; }
+
+            [JsonProperty("num_team_heals")]
+            public short Num_Team_Heals { get; set; }
+        }
+
+        private class Boss_Status
+        {
+            [JsonProperty("boss_hp")]
+            public long Boss_HP { get; set; }
+
+            [JsonProperty("boss_max_hp")]
+            public long Boss_Max_HP { get; set; }
+
+            [JsonProperty("boss_players")]
+            public Boss_Player[] Boss_Players { get; set; }
+        }
+
+        private class Boss_Player
+        {
+            [JsonProperty("accountid")]
+            public uint AccountID { get; set; }
+
+            [JsonProperty("clan_info")]
+            public Planet_Clan_Info Clan_Info { get; set; }
+
+            [JsonProperty("time_joined")]
+            public ulong Time_Joined { get; set; }
+
+            [JsonProperty("time_last_seen")]
+            public ulong Time_Last_Seen { get; set; }
+
+            [JsonProperty("name")]
+            public string Name { get; set; }
+
+            [JsonProperty("hp")]
+            public int HP { get; set; }
+
+            [JsonProperty("max_hp")]
+            public int Max_HP { get; set; }
+
+            [JsonProperty("salien")]
+            public Boss_Player_Salien Salien { get; set; }
+
+            [JsonProperty("score_on_join")]
+            public int Score_On_Join { get; set; }
+
+            [JsonProperty("level_on_join")]
+            public short Level_On_Join { get; set; }
+
+            [JsonProperty("xp_earned")]
+            public int XP_Earned { get; set; }
+
+            [JsonProperty("new_level")]
+            public short New_Level { get; set; }
+
+            [JsonProperty("next_level_score")]
+            public int Next_Level_Score { get; set; }
+        }
+
+        private class Boss_Player_Salien
+        {
+            [JsonProperty("body_type")]
+            public short Body_Type { get; set; }
+
+            [JsonProperty("mouth")]
+            public short Mouth { get; set; }
+
+            [JsonProperty("eyes")]
+            public short Eyes { get; set; }
+
+            [JsonProperty("arms")]
+            public short Arms { get; set; }
+
+            [JsonProperty("legs")]
+            public short Legs { get; set; }
+
+            [JsonProperty("hat_itemid")]
+            public ulong Hat_ItemID { get; set; }
+
+            [JsonProperty("hat_imageid")]
+            public string Hat_ImageID { get; set; }
+
+            [JsonProperty("shirt_itemid")]
+            public ulong Short_ItemID { get; set; }
+
+            [JsonProperty("shirt_imageid")]
+            public string Shirt_ImageID { get; set; }
         }
 
         public enum EResult
