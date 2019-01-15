@@ -1,6 +1,6 @@
 # SalienClient-CSharp
 
-Two C# classes for cheating Steam's Summer Sailen Game.  No browser / GUI needed.  Designed for multiple accounts.
+A C# client for cheating Steam's Summer Sailen Game.  No browser / GUI needed.  Designed for multiple accounts.
 
 ### Dependencies
 ```
@@ -12,8 +12,8 @@ Newtonsoft.Json
 Create a file called `tokens.txt` in the same folder as the executable, the syntax of this file is as follows
 
 ```
-UsernameOne:TokenOne
-UsernameTwo:TokenTwo
+UsernameOne:TokenOne:AccountIDOne
+UsernameTwo:TokenTwo:AccountIDTwo
 ```
 
 The `Username` doesn't have to be the username of the account, it's just to prevent clutter in the console
@@ -36,6 +36,10 @@ if (TokenResponse.Success == EResult.OK)
 	Client.Start();
 }
 ```
+
+The `AccountID` is only necessary if you want to see more information during boss fights and can be excluded from the text file, to get your `AccountID`, visit a site that can get your `SteamID3` and use the last characters `[U:1:XXXXXXXXX]`, or you can get your `AccountID` from your Trade URL here https://steamcommunity.com/my/tradeoffers/privacy
+
+
 
 ### Screenshot
 
